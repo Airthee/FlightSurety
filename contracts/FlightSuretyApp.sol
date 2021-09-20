@@ -280,12 +280,15 @@ contract FlightSuretyApp {
   );
 
   // Register an oracle with the contract
-  function registerOracle() external payable {
+  function registerOracle() public payable {
     // Require registration fee
+    require(
+      oracles[msg.sender].isRegistered == false,
+      "Oracle already registered"
+    );
     require(msg.value >= REGISTRATION_FEE, "Registration fee is required");
 
     uint8[3] memory indexes = generateIndexes(msg.sender);
-
     oracles[msg.sender] = Oracle({ isRegistered: true, indexes: indexes });
   }
 
