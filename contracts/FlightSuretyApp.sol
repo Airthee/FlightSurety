@@ -36,6 +36,7 @@ contract FlightSuretyApp {
   }
   mapping(bytes32 => Flight) private flights;
 
+  event AirlineRegistered(address airline);
   event FlightRegistered(address airline, string flight, bytes32 flightKey);
 
   /********************************************************************************************/
@@ -160,6 +161,8 @@ contract FlightSuretyApp {
     numberOfAirlines++;
     votes[account] = new address[](0);
     dataContract.registerAirline(account);
+
+    emit AirlineRegistered(account);
   }
 
   /**
@@ -290,6 +293,10 @@ contract FlightSuretyApp {
 
     uint8[3] memory indexes = generateIndexes(msg.sender);
     oracles[msg.sender] = Oracle({ isRegistered: true, indexes: indexes });
+  }
+
+  function isRegistered(address account) public view returns (bool) {
+    return oracles[account].isRegistered;
   }
 
   function getMyIndexes() external view returns (uint8[3] memory) {

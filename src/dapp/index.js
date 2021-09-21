@@ -15,16 +15,46 @@ import "./flightsurety.css";
     });
 
     // Read flight status
-    contract.onFlightStatusInfo((infos) => {
-      console.log(infos);
+    contract.on("FlightStatusInfo", (event) => {
+      const statusLabel = {
+        0: "UNKNOWN",
+        10: "ON_TIME",
+        20: "LATE_AIRLINE",
+        30: "LATE_WEATHER",
+        40: "LATE_TECHNICAL",
+        50: "LATE_OTHER",
+      };
+
+      console.log("onFlightStatusInfo", event);
+      display("Oracles", "Flight Status Info", [
+        {
+          label: `Flight ${event.flight}`,
+          error: false,
+          value: statusLabel[event.status],
+        },
+      ]);
+    });
+
+    contract.on("OracleReport", (event) => {
+      console.log("OracleReport", event);
+    });
+
+    // Read registered airlines
+    contract.on("AirlineRegistered", ({ airline }) => {
+      const formattedText = airline.slice(0, 6) + "..." + airline.slice(-3);
+
+      DOM.elid("airlines-selector").innerHTML += `
+        <option value="${airline}">${formattedText}</option>
+      `;
     });
 
     // User-submitted transaction
     DOM.elid("submit-oracle").addEventListener("click", () => {
-      let flight = DOM.elid("flight-number").value;
-      console.log("Fetching flight status : ", flight);
+      const flight = DOM.elid("flight-number").value;
+      const airline = DOM.elid("airlines-selector").value;
+      console.log(`Fetching flight status ${flight} for airline ${airline}`);
       // Write transaction
-      contract.fetchFlightStatus(flight, (error, result) => {
+      contract.fetchFlightStatus(flight, airline, (error, result) => {
         display("Oracles", "Trigger oracles", [
           {
             label: "Fetch Flight Status",
