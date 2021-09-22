@@ -35,10 +35,6 @@ import "./flightsurety.css";
       ]);
     });
 
-    contract.on("OracleReport", (event) => {
-      console.log("OracleReport", event);
-    });
-
     // Read registered airlines
     contract.on("AirlineRegistered", ({ airline }) => {
       const formattedText = airline.slice(0, 6) + "..." + airline.slice(-3);
@@ -48,9 +44,17 @@ import "./flightsurety.css";
       `;
     });
 
+    // Read registered flights
+    contract.on("FlightRegistered", ({ flight, flightKey }) => {
+      console.log("FlightRegistered", flight, flightKey);
+      DOM.elid("flights-selector").innerHTML += `
+        <option value="${flightKey}">${flight}</option>
+      `;
+    });
+
     // User-submitted transaction
     DOM.elid("submit-oracle").addEventListener("click", () => {
-      const flight = DOM.elid("flight-number").value;
+      const flight = DOM.elid("flights-selector").selectedOptions[0].innerText;
       const airline = DOM.elid("airlines-selector").value;
       console.log(`Fetching flight status ${flight} for airline ${airline}`);
       // Write transaction
@@ -60,6 +64,46 @@ import "./flightsurety.css";
             label: "Fetch Flight Status",
             error: error,
             value: result.flight + " " + result.timestamp,
+          },
+        ]);
+      });
+    });
+
+    // Buy insurance
+    DOM.elid("buy-insurance").addEventListener("click", () => {
+      const flightKey = DOM.elid("flights-selector").value;
+      const flightName =
+        DOM.elid("flights-selector").selectedOptions[0].innerText;
+      if (!flightKey) {
+        return window.alert("Flight and airline should be selected");
+      }
+
+      // Ask insurance amount
+      const amount = window.prompt("Insurance amount (in ether, max 1)");
+      if (Number.isNaN(amount)) {
+        return window.alert("Insurance amount is incorrect");
+      }
+
+      // Buy
+      contract.buy(amount, "ether", flightKey).then(() => {
+        display("Insurance", "Flight insurance", [
+          {
+            label: `Insurance value for flight ${flightName}`,
+            error: false,
+            value: `${amount} ether`,
+          },
+        ]);
+      });
+    });
+
+    // Refund
+    DOM.elid("refund").addEventListener("click", () => {
+      contract.pay().then((response) => {
+        display("Insurance", "Refund", [
+          {
+            label: `User is refunded`,
+            error: false,
+            value: response,
           },
         ]);
       });

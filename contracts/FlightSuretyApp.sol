@@ -173,19 +173,25 @@ contract FlightSuretyApp {
     public
     requireIsOperational
     requireIsAirline
-    returns (bytes32)
   {
     uint256 timestamp = block.timestamp;
     bytes32 flightKey = getFlightKey(msg.sender, flight, timestamp);
 
+    // Get the flight
+    // Check that it's not already registered
+    Flight storage flightInStorage = flights[flightKey];
+    require(
+      flightInStorage.isRegistered == false,
+      "Flight is already registered"
+    );
+
     // Register the flight
-    flights[flightKey].isRegistered = true;
-    flights[flightKey].statusCode = STATUS_CODE_UNKNOWN;
-    flights[flightKey].updatedTimestamp = timestamp;
-    flights[flightKey].airline = msg.sender;
+    flightInStorage.isRegistered = true;
+    flightInStorage.statusCode = STATUS_CODE_UNKNOWN;
+    flightInStorage.updatedTimestamp = timestamp;
+    flightInStorage.airline = msg.sender;
 
     emit FlightRegistered(msg.sender, flight, flightKey);
-    return flightKey;
   }
 
   /**
@@ -199,9 +205,7 @@ contract FlightSuretyApp {
     uint8 statusCode
   ) internal requireIsOperational {
     bytes32 flightKey = getFlightKey(airline, flight, timestamp);
-
     flights[flightKey].statusCode = statusCode;
-
     if (statusCode == STATUS_CODE_LATE_AIRLINE) {
       dataContract.creditInsurees(flightKey);
     }
@@ -323,25 +327,55 @@ contract FlightSuretyApp {
       "Index does not match oracle request"
     );
 
-    bytes32 key = keccak256(
-      abi.encodePacked(index, airline, flight, timestamp)
+    ResponseInfo storage response = getResponse(
+      index,
+      airline,
+      flight,
+      timestamp
     );
-    require(
-      oracleResponses[key].isOpen,
-      "Flight or timestamp do not match oracle request"
-    );
+    require(response.isOpen, "Flight or timestamp do not match oracle request");
 
-    oracleResponses[key].responses[statusCode].push(msg.sender);
+    response.responses[statusCode].push(msg.sender);
 
     // Information isn't considered verified until at least MIN_RESPONSES
     // oracles respond with the *** same *** information
     emit OracleReport(airline, flight, timestamp, statusCode);
-    if (oracleResponses[key].responses[statusCode].length >= MIN_RESPONSES) {
-      emit FlightStatusInfo(airline, flight, timestamp, statusCode);
+    if (response.responses[statusCode].length >= MIN_RESPONSES) {
+      // Close request
+      response.isOpen = false;
 
       // Handle flight status as appropriate
       processFlightStatus(airline, flight, timestamp, statusCode);
+      emit FlightStatusInfo(airline, flight, timestamp, statusCode);
     }
+  }
+
+  function getResponse(
+    uint8 index,
+    address airline,
+    string memory flight,
+    uint256 timestamp
+  ) internal view returns (ResponseInfo storage) {
+    bytes32 key = keccak256(
+      abi.encodePacked(index, airline, flight, timestamp)
+    );
+    return oracleResponses[key];
+  }
+
+  function isResponseOpen(
+    uint8 index,
+    address airline,
+    string memory flight,
+    uint256 timestamp
+  ) public view returns (bool) {
+    ResponseInfo storage response = getResponse(
+      index,
+      airline,
+      flight,
+      timestamp
+    );
+
+    return response.isOpen;
   }
 
   function getFlightKey(

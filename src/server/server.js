@@ -35,6 +35,26 @@ flightSuretyApp.events.OracleRequest(
   }
 );
 
+// Register flights
+const airlineAccount = web3.eth.accounts.privateKeyToAccount(
+  "0xae6ae8e5ccbfb04590405997ee2d52d2b330726137b875053c36d94e974d162f"
+);
+for (let flightIndex = 1; flightIndex <= 10; flightIndex++) {
+  const airlineId = airlineAccount.address.slice(2, 6);
+  const flightKey = `F_${airlineId}_${flightIndex}`;
+  flightSuretyApp.methods
+    .registerFlight(flightKey)
+    .send({ from: airlineAccount.address, gas: 6721975 })
+    .then(() => {
+      console.log(`(airline) flight registered : ${flightKey}`);
+    })
+    .catch((error) => {
+      console.error(
+        `(airline) failed to register flight ${flightKey} : ${error.message}`
+      );
+    });
+}
+
 const app = express();
 app.get("/api", (req, res) => {
   res.send({

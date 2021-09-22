@@ -1,75 +1,117 @@
 import Web3 from "web3";
 
+function log(message, account, error = false) {
+  const method = error ? "error" : "log";
+  let text = "";
+  if (account) {
+    text += `(oracle ${account.address}) `;
+  }
+  text += message;
+  console[method](text);
+}
+
 class OracleRepository {
   constructor(flightSuretyApp) {
     this.flightSuretyApp = flightSuretyApp;
-    this.accounts = new Map();
   }
 
-  registerMultipleOracles(accounts) {
-    return Promise.all(accounts.map((account) => this.registerOracle(account)));
+  async registerMultipleOracles(accounts) {
+    const tryRegisterOracle = async (account, nbTry = 0) => {
+      if (!account.address) {
+        throw new Error(`Account needs an address : ${account}`);
+      }
 
-    // const registerOraclesFrom = (index) => {
-    //   this.registerOracle(accounts[index]).then(() => {
-    //     if (accounts[index + 1]) {
-    //       registerOraclesFrom(index + 1);
-    //     }
-    //   });
-    // };
+      const isRegistered = await this.isOracleRegisterd(account);
+      if (isRegistered) {
+        log("already registered", account);
+        return;
+      }
 
-    // registerOraclesFrom(0);
-  }
-
-  registerOracle(account) {
-    if (!account.address) {
-      throw new Error(`Account needs an address : ${account}`);
-    }
-    this.accounts.set(account.address, account);
-    return this.flightSuretyApp.methods
-      .registerOracle()
-      .send({
-        from: account.address,
-        value: Web3.utils.toWei("1.5", "ether"),
-        gas: 6721975,
-      })
-      .then(() =>
-        console.log(`Oracle ${account.address} registered successfully`)
-      )
-      .catch((error) =>
-        console.error(
-          `Error while registering oracle ${account.address}`,
-          error.message
-        )
-      );
-  }
-
-  submitRandomResponses(values) {
-    const promises = [];
-    this.accounts.forEach((account) => {
-      promises.push(this.submitRandomResponse(values, account));
-    });
-    return Promise.all(promises);
-  }
-
-  submitRandomResponse({ index, airline, flight, timestamp }, account) {
-    // Check that current oracle have matching index
-    return this.flightSuretyApp.methods
-      .getMyIndexes()
-      .call({ from: account.address })
-      .then((indexes) => {
-        if (indexes.indexOf(index) !== -1) {
-          const availableResponses = [10, 20, 30, 40, 50];
-          const randomIndex = Math.floor(
-            Math.random() * availableResponses.length
-          );
-          const statusCode = availableResponses[randomIndex];
-
-          console.log(`Oracle ${account.address} is submitting ${statusCode}`);
-          return this.flightSuretyApp.methods
-            .submitOracleResponse(index, airline, flight, timestamp, statusCode)
-            .send({ from: account.address });
+      try {
+        log("trying to register...", account);
+        await this.registerOracle(account);
+        log("successfully registered", account);
+      } catch (error) {
+        log(`error while registering oracle : ${error.message}`, account, true);
+        if (nbTry < 10) {
+          log(`trying to register in 1 seconds...`, account);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await tryRegisterOracle(account, ++nbTry);
         }
-      });
+      }
+    };
+
+    this.accounts = accounts;
+    log("[START] registering oracles");
+    for (const account of accounts) {
+      await tryRegisterOracle(account);
+    }
+    log("[END] registering oracles");
+  }
+
+  isOracleRegisterd(account) {
+    return this.flightSuretyApp.methods
+      .isRegistered(account.address)
+      .call({ from: account.address });
+  }
+
+  async registerOracle(account) {
+    await this.flightSuretyApp.methods.registerOracle().send({
+      from: account.address,
+      value: Web3.utils.toWei("1.5", "ether"),
+      gas: 6721975,
+    });
+  }
+
+  async submitRandomResponses(values) {
+    for (const account of this.accounts) {
+      try {
+        await this.submitRandomResponse(values, account);
+      } catch (error) {
+        log(
+          `error while submitting response : ${error.message}`,
+          account,
+          true
+        );
+      }
+    }
+  }
+
+  async submitRandomResponse({ index, airline, flight, timestamp }, account) {
+    // Check if oracle is registered
+    const isRegistered = await this.isOracleRegisterd(account);
+    if (!isRegistered) {
+      return;
+    }
+
+    // Check if response is open
+    const isResponseOpen = await this.flightSuretyApp.methods
+      .isResponseOpen(index, airline, flight, timestamp)
+      .call({ from: account.address });
+    if (!isResponseOpen) {
+      return;
+    }
+
+    // Check that current oracle have matching index
+    const indexes = await this.flightSuretyApp.methods
+      .getMyIndexes()
+      .call({ from: account.address });
+    if (indexes.indexOf(index) === -1) {
+      return;
+    }
+
+    const statusCode = this.getRandomStatusCode();
+    log(`submitting response for flight "${flight}": ${statusCode}`, account);
+
+    await this.flightSuretyApp.methods
+      .submitOracleResponse(index, airline, flight, timestamp, statusCode)
+      .send({ from: account.address, gas: 6721975 });
+  }
+
+  getRandomStatusCode() {
+    const availableResponses = [/**0, 10,**/ 20 /** , 30, 40, 50*/];
+    const randomIndex = Math.floor(Math.random() * availableResponses.length);
+    return availableResponses[randomIndex];
   }
 }
 

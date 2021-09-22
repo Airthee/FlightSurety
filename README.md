@@ -4,7 +4,8 @@ FlightSurety is a sample application project for Udacity's Blockchain course.
 
 ## TODO
 
-Make the command `npm run dapp` work by updating configuration file.
+- Credit insureeds
+- Get refunded
 
 ## Install
 
