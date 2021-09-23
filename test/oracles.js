@@ -1,11 +1,19 @@
-var Test = require("../config/testConfig.js");
+const Test = require("../config/testConfig.js");
+const Web3 = require("web3");
 //var BigNumber = require('bignumber.js');
 
 contract("Oracles", async (accounts) => {
   const TEST_ORACLES_COUNT = 20;
-  var config;
+  let config;
   before("setup contract", async () => {
     config = await Test.Config(accounts);
+    await config.flightSuretyApp.registerAirline(config.firstAirline, {
+      from: config.owner,
+    });
+    await config.flightSuretyData.fund({
+      from: config.firstAirline,
+      value: Web3.utils.toWei("12", "ether"),
+    });
 
     // Watch contract events
     const STATUS_CODE_UNKNOWN = 0;
@@ -17,16 +25,14 @@ contract("Oracles", async (accounts) => {
   });
 
   it("can register oracles", async () => {
-    // ARRANGE
-    let fee = await config.flightSuretyApp.REGISTRATION_FEE.call();
-
     // ACT
     for (let a = 1; a < TEST_ORACLES_COUNT; a++) {
       await config.flightSuretyApp.registerOracle({
         from: accounts[a],
-        value: fee,
+        value: Web3.utils.toWei("1.5", "ether"),
+        gas: 6721975,
       });
-      let result = await config.flightSuretyApp.getMyIndexes.call({
+      const result = await config.flightSuretyApp.getMyIndexes.call({
         from: accounts[a],
       });
       console.log(
@@ -37,15 +43,20 @@ contract("Oracles", async (accounts) => {
 
   it("can request flight status", async () => {
     // ARRANGE
-    let flight = "ND1309"; // Course number
-    let timestamp = Math.floor(Date.now() / 1000);
+    const flight = "ND1309"; // Course number
+    const responseRegister = await config.flightSuretyApp.registerFlight(
+      flight,
+      {
+        from: config.firstAirline,
+      }
+    );
+    const flightRegisteredEvent = responseRegister.logs.find(
+      (l) => l.event === "FlightRegistered"
+    );
+    const { flightKey, timestamp } = flightRegisteredEvent.args;
 
     // Submit a request for oracles to get status information for a flight
-    await config.flightSuretyApp.fetchFlightStatus(
-      config.firstAirline,
-      flight,
-      timestamp
-    );
+    await config.flightSuretyApp.fetchFlightStatus(flightKey);
     // ACT
 
     // Since the Index assigned to each test account is opaque by design
@@ -54,7 +65,7 @@ contract("Oracles", async (accounts) => {
     // not requested so while sub-optimal, it's a good test of that feature
     for (let a = 1; a < TEST_ORACLES_COUNT; a++) {
       // Get oracle information
-      let oracleIndexes = await config.flightSuretyApp.getMyIndexes.call({
+      const oracleIndexes = await config.flightSuretyApp.getMyIndexes.call({
         from: accounts[a],
       });
       for (let idx = 0; idx < 3; idx++) {

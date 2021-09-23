@@ -38,7 +38,12 @@ contract FlightSuretyApp {
   mapping(bytes32 => Flight) private flights;
 
   event AirlineRegistered(address airline);
-  event FlightRegistered(address airline, string flight, bytes32 flightKey);
+  event FlightRegistered(
+    address airline,
+    string flight,
+    bytes32 flightKey,
+    uint256 timestamp
+  );
 
   /********************************************************************************************/
   /*                                       FUNCTION MODIFIERS                                 */
@@ -194,7 +199,7 @@ contract FlightSuretyApp {
     flightInStorage.updatedTimestamp = timestamp;
     flightInStorage.airline = msg.sender;
 
-    emit FlightRegistered(msg.sender, flight, flightKey);
+    emit FlightRegistered(msg.sender, flight, flightKey, timestamp);
   }
 
   /**
