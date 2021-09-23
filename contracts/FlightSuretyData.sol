@@ -3,6 +3,7 @@ pragma solidity ^0.8.7;
 
 // SafeMath is no longer needed starting with Solidity 0.8
 // import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./FlightSuretyDataInterface.sol";
 
@@ -16,10 +17,21 @@ contract FlightSuretyData is FlightSuretyDataInterface {
   mapping(address => bool) private authorizedCallers; // Addresses authorized to call the contract methods
   mapping(address => bool) private airlines; // Registered airlines
 
-  mapping(address => mapping(bytes32 => uint256)) private insuranceAmounts; // Amounts paid by the insurees for a specific airline's flight
-  mapping(bytes32 => address[]) insureesForFlights; // Map insurees addresses for each flight
+  struct FlightInsurance {
+    address[] insurees;
+    mapping(address => uint256) amounts;
+  }
+  mapping(bytes32 => FlightInsurance) flightInsurances;
 
   mapping(address => uint256) private balances; // balance for all type of users
+
+  event InsureeCredited(address insuree, bytes32 flightKey, uint256 amount);
+  event InsureePaid(address insuree, uint256 amount);
+  event FlightInsuranceBought(
+    bytes32 flightKey,
+    address insuree,
+    uint256 amount
+  );
 
   /********************************************************************************************/
   /*                                       EVENT DEFINITIONS                                  */
@@ -144,13 +156,18 @@ contract FlightSuretyData is FlightSuretyDataInterface {
   function buy(bytes32 flightKey) public payable override {
     require(msg.value > 0, "You must provide positive amount");
     require(msg.value <= 1 ether, "You cannot pay more than 1 ether");
+    require(
+      flightInsurances[flightKey].amounts[msg.sender] == 0,
+      "You already buyed an insurance for this flight"
+    );
 
-    insuranceAmounts[msg.sender][flightKey] += msg.value;
-    insureesForFlights[flightKey].push(msg.sender);
+    flightInsurances[flightKey].amounts[msg.sender] = msg.value;
+    flightInsurances[flightKey].insurees.push(msg.sender);
+    emit FlightInsuranceBought(flightKey, msg.sender, msg.value);
   }
 
   function getInsuranceAmount(bytes32 flightKey) public view returns (uint256) {
-    return insuranceAmounts[msg.sender][flightKey];
+    return flightInsurances[flightKey].amounts[msg.sender];
   }
 
   /**
@@ -161,17 +178,21 @@ contract FlightSuretyData is FlightSuretyDataInterface {
     override
     requireCallerAuthorized
   {
+    FlightInsurance storage flightInsurance = flightInsurances[flightKey];
+
     for (
       uint256 insureeIndex = 0;
-      insureeIndex < insureesForFlights[flightKey].length;
+      insureeIndex < flightInsurance.insurees.length;
       insureeIndex++
     ) {
-      address insureeAddress = insureesForFlights[flightKey][insureeIndex];
-      uint256 insuranceAmount = insuranceAmounts[insureeAddress][flightKey];
+      address insureeAddress = flightInsurance.insurees[insureeIndex];
+      uint256 amountToRefund = (flightInsurance.amounts[insureeAddress] * 3) /
+        2;
 
       // debit before credit
-      insuranceAmounts[insureeAddress][flightKey] = 0;
-      balances[insureeAddress] += (insuranceAmount * 3) / 2;
+      flightInsurance.amounts[insureeAddress] = 0;
+      balances[insureeAddress] += amountToRefund;
+      emit InsureeCredited(insureeAddress, flightKey, amountToRefund);
     }
   }
 
@@ -186,6 +207,7 @@ contract FlightSuretyData is FlightSuretyDataInterface {
     // Debit before credit
     balances[msg.sender] = 0;
     payable(msg.sender).transfer(amount);
+    emit InsureePaid(msg.sender, amount);
   }
 
   /**

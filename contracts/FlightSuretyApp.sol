@@ -30,6 +30,7 @@ contract FlightSuretyApp {
 
   struct Flight {
     bool isRegistered;
+    string name;
     uint8 statusCode;
     uint256 updatedTimestamp;
     address airline;
@@ -173,6 +174,7 @@ contract FlightSuretyApp {
     public
     requireIsOperational
     requireIsAirline
+    requireEnoughtBalance
   {
     uint256 timestamp = block.timestamp;
     bytes32 flightKey = getFlightKey(msg.sender, flight, timestamp);
@@ -187,6 +189,7 @@ contract FlightSuretyApp {
 
     // Register the flight
     flightInStorage.isRegistered = true;
+    flightInStorage.name = flight;
     flightInStorage.statusCode = STATUS_CODE_UNKNOWN;
     flightInStorage.updatedTimestamp = timestamp;
     flightInStorage.airline = msg.sender;
@@ -212,21 +215,29 @@ contract FlightSuretyApp {
   }
 
   // Generate a request for oracles to fetch flight information
-  function fetchFlightStatus(
-    address airline,
-    string memory flight,
-    uint256 timestamp
-  ) external requireIsOperational {
+  function fetchFlightStatus(bytes32 flightKey) external requireIsOperational {
     uint8 index = getRandomIndex(msg.sender);
+
+    Flight storage flight = flights[flightKey];
 
     // Generate a unique key for storing the request
     bytes32 key = keccak256(
-      abi.encodePacked(index, airline, flight, timestamp)
+      abi.encodePacked(
+        index,
+        flight.airline,
+        flight.name,
+        flight.updatedTimestamp
+      )
     );
     oracleResponses[key].requester = msg.sender;
     oracleResponses[key].isOpen = true;
 
-    emit OracleRequest(index, airline, flight, timestamp);
+    emit OracleRequest(
+      index,
+      flight.airline,
+      flight.name,
+      flight.updatedTimestamp
+    );
   }
 
   // region ORACLE MANAGEMENT

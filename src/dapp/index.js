@@ -1,21 +1,28 @@
 import DOM from "./dom";
 import Contract from "./contract";
 import "./flightsurety.css";
+import Web3 from "web3";
 
 (async () => {
-  let result = null;
+  const contract = new Contract("localhost", () => {
+    function simpleFormatAddress(address) {
+      return address.slice(0, 6) + "..." + address.slice(-3);
+    }
 
-  let contract = new Contract("localhost", () => {
-    // Read transaction
-    contract.isOperational((error, result) => {
-      console.log(error, result);
-      display("Operational Status", "Check if contract is operational", [
-        { label: "Operational Status", error: error, value: result },
-      ]);
-    });
+    function getSelectedFlight() {
+      const element = DOM.elid("flights-selector");
+      return {
+        key: element.value,
+        name: element.selectedOptions[0].innerText,
+      };
+    }
+
+    function formatAmount(amount) {
+      return Web3.utils.fromWei(amount, "ether") + " ether";
+    }
 
     // Read flight status
-    contract.on("FlightStatusInfo", (event) => {
+    contract.onAppEvent("FlightStatusInfo", (event) => {
       const statusLabel = {
         0: "UNKNOWN",
         10: "ON_TIME",
@@ -28,42 +35,107 @@ import "./flightsurety.css";
       console.log("onFlightStatusInfo", event);
       display("Oracles", "Flight Status Info", [
         {
-          label: `Flight ${event.flight}`,
-          error: false,
+          label: "Flight",
+          value: event.flight,
+        },
+        {
+          label: "Airline",
+          value: simpleFormatAddress(event.airline),
+        },
+        {
+          label: "Status",
           value: statusLabel[event.status],
         },
       ]);
     });
 
-    // Read registered airlines
-    contract.on("AirlineRegistered", ({ airline }) => {
-      const formattedText = airline.slice(0, 6) + "..." + airline.slice(-3);
-
-      DOM.elid("airlines-selector").innerHTML += `
-        <option value="${airline}">${formattedText}</option>
-      `;
-    });
-
     // Read registered flights
-    contract.on("FlightRegistered", ({ flight, flightKey }) => {
-      console.log("FlightRegistered", flight, flightKey);
-      DOM.elid("flights-selector").innerHTML += `
-        <option value="${flightKey}">${flight}</option>
+    contract.onAppEvent(
+      "FlightRegistered",
+      ({ airline, flight, flightKey }) => {
+        const formattedAirline = simpleFormatAddress(airline);
+        const formattedFlightKey = simpleFormatAddress(flightKey);
+
+        DOM.elid("flights-selector").innerHTML += `
+        <option value="${flightKey}">${flight} (airline: ${formattedAirline} / flightKey: ${formattedFlightKey})</option>
       `;
+      }
+    );
+
+    contract.onDataEvent(
+      "FlightInsuranceBought",
+      ({ flightKey, insuree, amount }) => {
+        display("Insurance", "Insuree bought insurance ticket", [
+          {
+            label: "Insuree",
+            value: simpleFormatAddress(insuree),
+          },
+          {
+            label: "FlightKey",
+            value: simpleFormatAddress(flightKey),
+          },
+          {
+            label: "Amount",
+            error: false,
+            value: formatAmount(amount),
+          },
+        ]);
+      }
+    );
+
+    contract.onDataEvent(
+      "InsureeCredited",
+      ({ insuree, amount, flightKey }) => {
+        display("Insurance", `Insuree has been credited`, [
+          {
+            label: "Insuree",
+            value: simpleFormatAddress(insuree),
+          },
+          {
+            label: "Flight key",
+            value: simpleFormatAddress(flightKey),
+          },
+          {
+            label: "Amount",
+            error: false,
+            value: formatAmount(amount),
+          },
+        ]);
+      }
+    );
+
+    contract.onDataEvent("InsureePaid", ({ insuree, amount }) => {
+      display("Insurance", `Insuree has been paid`, [
+        {
+          label: "Insuree",
+          value: simpleFormatAddress(insuree),
+        },
+        {
+          label: "Amount",
+          value: formatAmount(amount),
+        },
+      ]);
     });
 
     // User-submitted transaction
     DOM.elid("submit-oracle").addEventListener("click", () => {
-      const flight = DOM.elid("flights-selector").selectedOptions[0].innerText;
-      const airline = DOM.elid("airlines-selector").value;
-      console.log(`Fetching flight status ${flight} for airline ${airline}`);
+      const selectedFlight = getSelectedFlight();
+
+      console.log(`Fetching flight status ${selectedFlight.name}`);
+
       // Write transaction
-      contract.fetchFlightStatus(flight, airline, (error, result) => {
-        display("Oracles", "Trigger oracles", [
+      contract.fetchFlightStatus(selectedFlight.key, (error, result) => {
+        console.log("fetchFlightStatus", result);
+        display("Oracles", "Trigger oracles to fetch flight status", [
           {
-            label: "Fetch Flight Status",
-            error: error,
-            value: result.flight + " " + result.timestamp,
+            label: "Flight key",
+            value: simpleFormatAddress(result),
+            error,
+          },
+          {
+            label: "Flight name",
+            value: selectedFlight.name,
+            error,
           },
         ]);
       });
@@ -71,10 +143,8 @@ import "./flightsurety.css";
 
     // Buy insurance
     DOM.elid("buy-insurance").addEventListener("click", () => {
-      const flightKey = DOM.elid("flights-selector").value;
-      const flightName =
-        DOM.elid("flights-selector").selectedOptions[0].innerText;
-      if (!flightKey) {
+      const flight = getSelectedFlight();
+      if (!flight.key) {
         return window.alert("Flight and airline should be selected");
       }
 
@@ -85,10 +155,18 @@ import "./flightsurety.css";
       }
 
       // Buy
-      contract.buy(amount, "ether", flightKey).then(() => {
-        display("Insurance", "Flight insurance", [
+      contract.buy(amount, "ether", flight.key).then(() => {
+        display("Insurance", "Buy flight insurance", [
           {
-            label: `Insurance value for flight ${flightName}`,
+            label: "Flight key",
+            value: simpleFormatAddress(flight.key),
+          },
+          {
+            label: "Flight name",
+            value: flight.name,
+          },
+          {
+            label: `Value`,
             error: false,
             value: `${amount} ether`,
           },
@@ -98,12 +176,12 @@ import "./flightsurety.css";
 
     // Refund
     DOM.elid("refund").addEventListener("click", () => {
-      contract.pay().then((response) => {
+      contract.pay().then(() => {
         display("Insurance", "Refund", [
           {
-            label: `User is refunded`,
+            label: "Status",
             error: false,
-            value: response,
+            value: "Waiting for refunding to be done",
           },
         ]);
       });

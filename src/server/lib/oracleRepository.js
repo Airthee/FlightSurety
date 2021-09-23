@@ -109,7 +109,7 @@ class OracleRepository {
   }
 
   getRandomStatusCode() {
-    const availableResponses = [/**0, 10,**/ 20 /** , 30, 40, 50*/];
+    const availableResponses = [0, 10, 20, 30, 40, 50];
     const randomIndex = Math.floor(Math.random() * availableResponses.length);
     return availableResponses[randomIndex];
   }

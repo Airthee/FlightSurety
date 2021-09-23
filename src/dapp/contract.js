@@ -48,16 +48,11 @@ export default class Contract {
       .call({ from: this.owner }, callback);
   }
 
-  fetchFlightStatus(flight, airline, callback) {
-    let payload = {
-      airline,
-      flight,
-      timestamp: Math.floor(Date.now() / 1000),
-    };
+  fetchFlightStatus(flightKey, callback) {
     return this.flightSuretyApp.methods
-      .fetchFlightStatus(payload.airline, payload.flight, payload.timestamp)
+      .fetchFlightStatus(flightKey)
       .send({ from: this.owner }, (error, result) => {
-        callback(error, payload);
+        callback(error, flightKey);
       });
   }
 
@@ -91,8 +86,30 @@ export default class Contract {
     });
   }
 
-  on(eventName, callback) {
+  onAppEvent(eventName, callback) {
+    if (!this.flightSuretyApp.events[eventName]) {
+      throw new Error(`flightSuretyApp has no event ${eventName}`);
+    }
+
     this.flightSuretyApp.events[eventName](
+      {
+        fromBlock: 0,
+      },
+      function (error, event) {
+        if (error) console.error(error);
+        if (callback) {
+          callback(event.returnValues);
+        }
+      }
+    );
+  }
+
+  onDataEvent(eventName, callback) {
+    if (!this.flightSuretyData.events[eventName]) {
+      throw new Error(`flightSuretyData has no event ${eventName}`);
+    }
+
+    this.flightSuretyData.events[eventName](
       {
         fromBlock: 0,
       },
